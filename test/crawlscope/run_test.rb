@@ -3,9 +3,13 @@
 require "test_helper"
 
 class CrawlscopeRunTest < Minitest::Test
-  FakeResult = Data.define(:reported) do
+  FakeResult = Data.define(:reported, :sitemap_manifest) do
     def ok?
       true
+    end
+
+    def initialize(reported: true, sitemap_manifest: nil)
+      super
     end
   end
 
@@ -28,19 +32,21 @@ class CrawlscopeRunTest < Minitest::Test
   end
 
   class FakeConfiguration
-    attr_reader :base_url, :received_arguments, :sitemap_path
+    attr_reader :base_url, :received_arguments, :sitemap_path, :sitemap_manifest_path
 
-    def initialize(result:, base_url: "https://example.com", sitemap_path: "/tmp/sitemap.xml")
+    def initialize(result:, base_url: "https://example.com", sitemap_path: "/tmp/sitemap.xml", sitemap_manifest_path: nil)
       @result = result
       @base_url = base_url
       @sitemap_path = sitemap_path
+      @sitemap_manifest_path = sitemap_manifest_path
     end
 
-    def audit(base_url:, sitemap_path:, rule_names:)
+    def audit(base_url:, sitemap_path:, rule_names:, sitemap_manifest_path: nil)
       @received_arguments = {
         base_url: base_url,
         sitemap_path: sitemap_path,
-        rule_names: rule_names
+        rule_names: rule_names,
+        sitemap_manifest_path: sitemap_manifest_path
       }
 
       FakeAudit.new(result: @result)
@@ -105,7 +111,8 @@ class CrawlscopeRunTest < Minitest::Test
       {
         base_url: "https://example.com",
         sitemap_path: "/tmp/sitemap.xml",
-        rule_names: "links"
+        rule_names: "links",
+        sitemap_manifest_path: nil
       },
       configuration.received_arguments
     )
@@ -124,7 +131,8 @@ class CrawlscopeRunTest < Minitest::Test
       {
         base_url: "https://example.com",
         sitemap_path: "https://example.com/sitemap.xml",
-        rule_names: nil
+        rule_names: nil,
+        sitemap_manifest_path: nil
       },
       configuration.received_arguments
     )
@@ -141,10 +149,55 @@ class CrawlscopeRunTest < Minitest::Test
       {
         base_url: "http://localhost:3000",
         sitemap_path: "http://localhost:3000/sitemap.xml",
-        rule_names: nil
+        rule_names: nil,
+        sitemap_manifest_path: nil
       },
       configuration.received_arguments
     )
+  end
+
+  def test_validate_passes_sitemap_manifest_path_to_configuration
+    result = FakeResult.new
+    configuration = FakeConfiguration.new(result: result, sitemap_manifest_path: "/tmp/manifest.json")
+    reporter = FakeReporter.new
+
+    Crawlscope::Run.new(configuration: configuration, reporter: reporter).validate(sitemap_manifest_path: "/tmp/manifest.json")
+
+    assert_equal "/tmp/manifest.json", configuration.received_arguments.fetch(:sitemap_manifest_path)
+  end
+
+  def test_validate_writes_sitemap_manifest_when_path_is_configured
+    Dir.mktmpdir do |dir|
+      sitemap_path = File.join(dir, "sitemap.xml")
+      File.write(sitemap_path, <<~XML)
+        <?xml version="1.0" encoding="UTF-8"?>
+        <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+          <url><loc>https://example.com/pricing</loc><lastmod>2026-11-01</lastmod></url>
+        </urlset>
+      XML
+      manifest = Crawlscope::Sitemap.new(path: sitemap_path).manifest(base_url: "https://example.com")
+      result = FakeResult.new(sitemap_manifest: manifest)
+      manifest_path = File.join(dir, "nested", "sitemap-manifest.json")
+      configuration = FakeConfiguration.new(result: result)
+
+      Crawlscope::Run.new(configuration: configuration, reporter: FakeReporter.new)
+        .validate(sitemap_manifest_path: manifest_path)
+
+      assert File.exist?(manifest_path)
+      decoded = JSON.parse(File.read(manifest_path))
+      assert_equal sitemap_path, decoded.fetch("root_sitemap")
+      assert_equal ["https://example.com/pricing"], decoded.fetch("entries").map { |entry| entry.fetch("url") }
+      assert_equal "2026-11-01", decoded.fetch("entries").first.fetch("lastmod")
+    end
+  end
+
+  def test_validate_without_manifest_path_skips_manifest_writing
+    result = FakeResult.new(sitemap_manifest: nil)
+    configuration = FakeConfiguration.new(result: result)
+
+    Crawlscope::Run.new(configuration: configuration, reporter: FakeReporter.new).validate
+
+    assert_nil configuration.received_arguments.fetch(:sitemap_manifest_path)
   end
 
   def test_validate_json_ld_reports_valid_structured_data

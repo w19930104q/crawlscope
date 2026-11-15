@@ -42,6 +42,14 @@ its reporter. `Crawl` coordinates sitemap expansion, fetching, response checks,
 and rule execution; `Crawling::TargetResolver` supplies rules with cached target
 resolution through the existing `Context` protocol.
 
+`Sitemap` owns index expansion and gzip decoding. Its strict `urls` API raises
+on the first invalid or unreadable sitemap, while `manifest` keeps traversing:
+each visited document, URL entry (original `loc`, normalized URL, `lastmod`,
+`hreflang` alternates, and parent chain), and located child error is recorded
+once through a shared, mutex-protected traversal state. Cycles and duplicate
+entries collapse on their visited source or normalized URL. `SitemapManifestWriter`
+serializes that manifest when `sitemap_manifest_path` is configured.
+
 The links rule creates its collaborators for each call. A reused rule instance
 does not retain a previous crawl's resolver or target cache. `Graph` indexes
 resolved incoming links once, excludes self-links and noindex targets, and

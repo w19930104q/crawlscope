@@ -129,7 +129,8 @@ module Crawlscope
       options = {
         url: normalized_string(ENV["URL"]),
         rule_names: normalized_string(ENV["RULES"]),
-        sitemap_path: normalized_string(ENV["SITEMAP"])
+        sitemap_path: normalized_string(ENV["SITEMAP"]),
+        sitemap_manifest_path: normalized_string(ENV["SITEMAP_MANIFEST"])
       }
 
       configure_renderer(resolved_renderer)
@@ -148,6 +149,10 @@ module Crawlscope
 
         opts.on("--sitemap PATH_OR_URL", "Set the sitemap path or URL") do |value|
           options[:sitemap_path] = value
+        end
+
+        opts.on("--sitemap-manifest PATH", "Write a detailed sitemap manifest JSON to PATH") do |value|
+          options[:sitemap_manifest_path] = value
         end
 
         opts.on("--rules CSV", "Run a subset of rules, for example metadata,links") do |value|
@@ -182,7 +187,8 @@ module Crawlscope
       result = task.validate(
         base_url: options[:url],
         sitemap_path: options[:sitemap_path],
-        rule_names: options[:rule_names]
+        rule_names: options[:rule_names],
+        sitemap_manifest_path: options[:sitemap_manifest_path]
       )
 
       result.ok? ? 0 : 1

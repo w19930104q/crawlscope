@@ -2,9 +2,10 @@
 
 module Crawlscope
   class Crawl
-    def initialize(base_url:, sitemap_path:, rules:, schema_registry:, browser_factory: nil, concurrency: Configuration::DEFAULT_CONCURRENCY, fetch_executor: nil, network_idle_timeout_seconds: Configuration::DEFAULT_BROWSER_NETWORK_IDLE_TIMEOUT_SECONDS, profile_token: nil, renderer: :http, scroll_page: Configuration::DEFAULT_BROWSER_SCROLL_PAGE, timeout_seconds: Configuration::DEFAULT_TIMEOUT_SECONDS, allowed_statuses: Configuration::DEFAULT_ALLOWED_STATUSES)
+    def initialize(base_url:, sitemap_path:, rules:, schema_registry:, browser_factory: nil, concurrency: Configuration::DEFAULT_CONCURRENCY, fetch_executor: nil, network_idle_timeout_seconds: Configuration::DEFAULT_BROWSER_NETWORK_IDLE_TIMEOUT_SECONDS, profile_token: nil, renderer: :http, scroll_page: Configuration::DEFAULT_BROWSER_SCROLL_PAGE, timeout_seconds: Configuration::DEFAULT_TIMEOUT_SECONDS, allowed_statuses: Configuration::DEFAULT_ALLOWED_STATUSES, sitemap_manifest_path: nil)
       @base_url = base_url
       @sitemap_path = sitemap_path
+      @sitemap_manifest_path = sitemap_manifest_path
       @rules = Array(rules)
       @schema_registry = schema_registry
       @browser_factory = browser_factory
@@ -21,7 +22,7 @@ module Crawlscope
     def call
       validate_fetch_executor!
 
-      urls = sitemap_urls
+      urls, sitemap_manifest = sitemap_urls
 
       @page_fetcher = page
       pages = Crawler.new(page_fetcher: @page_fetcher, concurrency: @concurrency, fetch_executor: @fetch_executor).call(urls)
@@ -39,7 +40,8 @@ module Crawlscope
         sitemap_path: @sitemap_path,
         urls: urls,
         pages: pages,
-        issues: issues
+        issues: issues,
+        sitemap_manifest: sitemap_manifest
       )
     ensure
       @page_fetcher&.close
@@ -47,18 +49,30 @@ module Crawlscope
 
     private
 
-    def sitemap_urls
-      urls = Sitemap.new(
+    def sitemap_parser
+      Sitemap.new(
         path: @sitemap_path,
         adapter: http_adapter,
         concurrency: @concurrency,
         fetch_executor: @fetch_executor,
         profile_token: @profile_token,
         timeout_seconds: @timeout_seconds
-      ).urls(base_url: @base_url)
-      raise ValidationError, "No URLs found in sitemap: #{@sitemap_path}" if urls.empty?
+      )
+    end
 
-      urls
+    def sitemap_urls
+      if @sitemap_manifest_path
+        manifest = sitemap_parser.manifest(base_url: @base_url)
+        urls = manifest.urls
+        raise ValidationError, "No URLs found in sitemap: #{@sitemap_path}" if urls.empty?
+
+        [urls, manifest]
+      else
+        urls = sitemap_parser.urls(base_url: @base_url)
+        raise ValidationError, "No URLs found in sitemap: #{@sitemap_path}" if urls.empty?
+
+        [urls, nil]
+      end
     end
 
     def page

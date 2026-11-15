@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- optional sitemap manifest (`--sitemap-manifest` / `SITEMAP_MANIFEST`) that
+  preserves the parent sitemap chain, original and normalized URLs, `lastmod`
+  values and `hreflang` alternate relations
+- `Crawlscope::Sitemap#manifest` returning entries, visited documents and
+  located child-sitemap errors without aborting traversal
+- gzip-compressed sitemap support for both plain URL collection and manifests
+- `sitemap_manifest` on `Crawlscope::Result`, populated only when a manifest
+  path is configured
+
+### Changed
+
+- child sitemap failures in manifest mode are recorded as locatable errors with
+  their parent chain instead of failing the whole batch; `Sitemap#urls` remains
+  strict and raises on the first failure
+- the threaded fetch executor re-raises worker exceptions instead of returning
+  `nil` slots, so strict traversal surfaces failures reliably
+
+### Fixed
+
+- sitemap cycles, index self-references and duplicate URL entries are visited
+  or recorded once across concurrent child expansion
+
 ## [0.10.1] - 2026-11-08
 
 

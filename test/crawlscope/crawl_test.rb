@@ -3,6 +3,8 @@
 require "test_helper"
 
 class CrawlscopeCrawlTest < Minitest::Test
+  FIXTURE_ROOT = File.expand_path("../fixtures/sitemap", __dir__)
+
   class RecordingExecutor
     attr_reader :batches
 
@@ -419,6 +421,76 @@ class CrawlscopeCrawlTest < Minitest::Test
       executor.batches
     )
     assert fetcher.closed
+  end
+
+  def test_sitemap_manifest_mode_keeps_urls_and_attaches_manifest
+    sitemap_path = File.join(@tmp_dir, "sitemap.xml")
+    File.write(sitemap_path, <<~XML)
+      <?xml version="1.0" encoding="UTF-8"?>
+      <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+        <url>
+          <loc>https://example.com/pricing</loc>
+          <lastmod>2026-11-01</lastmod>
+          <xhtml:link rel="alternate" hreflang="en" href="https://example.com/pricing"/>
+        </url>
+      </urlset>
+    XML
+    stub_request(:get, "https://example.com/pricing")
+      .to_return(status: 200, headers: {"Content-Type" => "text/html"}, body: "<html><body>Pricing</body></html>")
+
+    result = Crawlscope::Crawl.new(
+      base_url: "https://example.com",
+      sitemap_path: sitemap_path,
+      rules: [],
+      schema_registry: Crawlscope::SchemaRegistry.default,
+      fetch_executor: :threaded,
+      sitemap_manifest_path: File.join(@tmp_dir, "manifest.json")
+    ).call
+
+    assert_equal ["https://example.com/pricing"], result.urls
+    assert_equal ["https://example.com/pricing"], result.sitemap_manifest.urls
+    assert_equal "2026-11-01", result.sitemap_manifest.entries.first.lastmod
+    assert_equal "en", result.sitemap_manifest.entries.first.alternates.first.hreflang
+  end
+
+  def test_sitemap_manifest_mode_survives_broken_child_sitemaps
+    FileUtils.cp_r(Dir.glob(File.join(FIXTURE_ROOT, "*")), @tmp_dir)
+    sitemap_path = File.join(@tmp_dir, "sitemap.xml")
+    manifest_urls = Crawlscope::Sitemap.new(path: sitemap_path, fetch_executor: :threaded)
+      .manifest(base_url: "https://example.com").urls
+    manifest_urls.each do |url|
+      stub_request(:get, url).to_return(status: 200, headers: {"Content-Type" => "text/html"}, body: "<html><body>ok</body></html>")
+    end
+
+    result = Crawlscope::Crawl.new(
+      base_url: "https://example.com",
+      sitemap_path: sitemap_path,
+      rules: [],
+      schema_registry: Crawlscope::SchemaRegistry.default,
+      fetch_executor: :threaded,
+      sitemap_manifest_path: File.join(@tmp_dir, "manifest.json")
+    ).call
+
+    assert_equal manifest_urls, result.urls
+    assert_equal 1, result.sitemap_manifest.errors.size
+    assert_includes result.sitemap_manifest.errors.first.fetch(:message), "broken.xml"
+  end
+
+  def test_sitemap_manifest_is_nil_without_manifest_path
+    File.write(@sitemap_path, '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://example.com/pricing</loc></url></urlset>')
+    stub_request(:get, "https://example.com/pricing")
+      .to_return(status: 200, headers: {"Content-Type" => "text/html"}, body: "<html><body>Pricing</body></html>")
+
+    result = Crawlscope::Crawl.new(
+      base_url: "https://example.com",
+      sitemap_path: @sitemap_path,
+      rules: [],
+      schema_registry: Crawlscope::SchemaRegistry.default,
+      fetch_executor: :threaded
+    ).call
+
+    assert_nil result.sitemap_manifest
+    assert_equal ["https://example.com/pricing"], result.urls
   end
 
   private

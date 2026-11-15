@@ -44,11 +44,12 @@ class CrawlscopeCliTest < Minitest::Test
   class FakeTask
     attr_reader :validate_arguments, :json_ld_arguments
 
-    def validate(base_url:, sitemap_path:, rule_names:)
+    def validate(base_url:, sitemap_path:, rule_names:, sitemap_manifest_path: nil)
       @validate_arguments = {
         base_url: base_url,
         sitemap_path: sitemap_path,
-        rule_names: rule_names
+        rule_names: rule_names,
+        sitemap_manifest_path: sitemap_manifest_path
       }
 
       success_result
@@ -83,7 +84,7 @@ class CrawlscopeCliTest < Minitest::Test
   end
 
   class InvalidTask < FakeTask
-    def validate(base_url:, sitemap_path:, rule_names:)
+    def validate(base_url:, sitemap_path:, rule_names:, sitemap_manifest_path: nil)
       raise Crawlscope::ValidationError, "No URLs found in sitemap: #{sitemap_path}"
     end
   end
@@ -129,7 +130,8 @@ class CrawlscopeCliTest < Minitest::Test
       {
         base_url: "https://example.com",
         sitemap_path: "https://example.com/sitemap-pages.xml",
-        rule_names: "metadata,links"
+        rule_names: "metadata,links",
+        sitemap_manifest_path: nil
       },
       task.validate_arguments
     )
@@ -313,6 +315,78 @@ class CrawlscopeCliTest < Minitest::Test
     assert_equal 1, status
     assert_includes err.string, "No URLs found in sitemap"
     refute_includes err.string, "Usage:"
+  end
+
+  def test_validate_passes_sitemap_manifest_option_to_task
+    configuration = FakeConfiguration.new
+    task = FakeTask.new
+
+    status = Crawlscope::Cli.start(
+      ["validate", "--url", "https://example.com", "--sitemap-manifest", "tmp/sitemap-manifest.json"],
+      out: StringIO.new,
+      err: StringIO.new,
+      configuration: configuration,
+      task: task
+    )
+
+    assert_equal 0, status
+    assert_equal "tmp/sitemap-manifest.json", task.validate_arguments[:sitemap_manifest_path]
+  end
+
+  def test_validate_reads_sitemap_manifest_from_environment
+    configuration = FakeConfiguration.new
+    task = FakeTask.new
+
+    with_env("SITEMAP_MANIFEST" => "tmp/sitemap-manifest.json") do
+      status = Crawlscope::Cli.start(["validate", "--url", "https://example.com"], out: StringIO.new, err: StringIO.new, configuration: configuration, task: task)
+
+      assert_equal 0, status
+    end
+
+    assert_equal "tmp/sitemap-manifest.json", task.validate_arguments[:sitemap_manifest_path]
+  end
+
+  def test_validate_writes_sitemap_manifest_from_local_fixture
+    Dir.mktmpdir do |directory|
+      sitemap_path = File.join(directory, "sitemap.xml")
+      manifest_path = File.join(directory, "manifest.json")
+      File.write(sitemap_path, <<~XML)
+        <?xml version="1.0" encoding="UTF-8"?>
+        <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+          <url>
+            <loc>https://example.com/pricing</loc>
+            <lastmod>2026-11-01T12:00:00Z</lastmod>
+            <xhtml:link rel="alternate" hreflang="en" href="https://example.com/pricing"/>
+          </url>
+        </urlset>
+      XML
+      stub_request(:get, "https://example.com/pricing")
+        .to_return(
+          status: 200,
+          headers: {"Content-Type" => "text/html"},
+          body: "<html><head><title>Pricing</title></head><body>Pricing</body></html>"
+        )
+
+      out = StringIO.new
+      err = StringIO.new
+      status = with_env("FETCH_EXECUTOR" => "threaded") do
+        Crawlscope::Cli.start(
+          ["validate", "--url", "https://example.com", "--sitemap", sitemap_path, "--rules", "metadata", "--sitemap-manifest", manifest_path],
+          out: out,
+          err: err
+        )
+      end
+
+      assert_equal 0, status, err.string
+      assert File.exist?(manifest_path)
+      manifest = JSON.parse(File.read(manifest_path))
+      entry = manifest.fetch("entries").first
+      assert_equal "https://example.com/pricing", entry.fetch("url")
+      assert_equal "2026-11-01T12:00:00Z", entry.fetch("lastmod")
+      assert_equal "en", entry.fetch("alternates").first.fetch("hreflang")
+      assert_equal sitemap_path, entry.fetch("sitemap")
+      assert_includes out.string, "Crawlscope validation"
+    end
   end
 
   private

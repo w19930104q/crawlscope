@@ -11,7 +11,7 @@ module Crawlscope
     RENDERERS = %i[http browser].freeze
     DEFAULT_TIMEOUT_SECONDS = 20
 
-    attr_writer :allowed_statuses, :base_url, :browser_factory, :concurrency, :fetch_executor, :network_idle_timeout_seconds, :output, :profile_token, :renderer, :rule_registry, :schema_registry, :scroll_page, :site_name, :sitemap_path, :timeout_seconds
+    attr_writer :allowed_statuses, :base_url, :browser_factory, :concurrency, :fetch_executor, :network_idle_timeout_seconds, :output, :profile_token, :renderer, :rule_registry, :schema_registry, :scroll_page, :site_name, :sitemap_manifest_path, :sitemap_path, :timeout_seconds
 
     def allowed_statuses
       value = resolve(@allowed_statuses)
@@ -81,7 +81,7 @@ module Crawlscope
       RuleRegistry.default(site_name: site_name)
     end
 
-    def audit(base_url: self.base_url, sitemap_path: self.sitemap_path, rule_names: nil)
+    def audit(base_url: self.base_url, sitemap_path: self.sitemap_path, rule_names: nil, sitemap_manifest_path: self.sitemap_manifest_path)
       if base_url.to_s.strip.empty?
         raise ConfigurationError, "Crawlscope base_url is not configured"
       end
@@ -93,6 +93,7 @@ module Crawlscope
       Crawl.new(
         base_url: base_url,
         sitemap_path: sitemap_path,
+        sitemap_manifest_path: sitemap_manifest_path,
         browser_factory: browser_factory,
         concurrency: concurrency,
         fetch_executor: fetch_executor,
@@ -125,6 +126,11 @@ module Crawlscope
 
     def sitemap_path
       resolve(@sitemap_path)
+    end
+
+    def sitemap_manifest_path
+      value = resolve(@sitemap_manifest_path)
+      value.to_s.strip.empty? ? nil : value
     end
 
     def timeout_seconds

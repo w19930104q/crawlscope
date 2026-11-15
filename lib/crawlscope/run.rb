@@ -7,15 +7,18 @@ module Crawlscope
       @reporter = reporter
     end
 
-    def validate(base_url: nil, sitemap_path: nil, rule_names: nil)
+    def validate(base_url: nil, sitemap_path: nil, rule_names: nil, sitemap_manifest_path: nil)
       resolved_base_url = base_url || default_base_url
+      resolved_manifest_path = sitemap_manifest_path || @configuration.sitemap_manifest_path
       crawl = @configuration.audit(
         base_url: resolved_base_url,
         sitemap_path: sitemap_path || default_sitemap_path(base_url: resolved_base_url),
-        rule_names: rule_names
+        rule_names: rule_names,
+        sitemap_manifest_path: resolved_manifest_path
       )
 
       result = crawl.call
+      write_sitemap_manifest(result, resolved_manifest_path) if resolved_manifest_path
       @reporter.report(result)
       result
     end
@@ -45,6 +48,12 @@ module Crawlscope
       return value unless value.to_s.strip.empty?
 
       "#{base_url.to_s.chomp("/")}/sitemap.xml"
+    end
+
+    def write_sitemap_manifest(result, path)
+      return if result.sitemap_manifest.nil?
+
+      SitemapManifestWriter.new(path: path).write(result.sitemap_manifest)
     end
   end
 end

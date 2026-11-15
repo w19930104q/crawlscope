@@ -102,7 +102,22 @@ To use a non-default sitemap, pass `--sitemap`:
 crawlscope validate --url https://example.com --sitemap https://example.com/sitemap.xml
 ```
 
-Child sitemap indexes are supported automatically.
+Child sitemap indexes are supported automatically, including gzip-compressed
+`.xml.gz` sitemaps.
+
+To keep the parent sitemap chain, original and normalized URLs, `lastmod`
+timestamps and `hreflang` alternates, write an optional sitemap manifest:
+
+```bash
+crawlscope validate --url https://example.com --sitemap-manifest tmp/sitemap-manifest.json
+```
+
+`SITEMAP_MANIFEST` enables the same output through the environment. The manifest
+is additive: the validated `urls` and terminal validation output are unchanged.
+Sitemaps already visited (including index self-references and cycles) and
+duplicate URL entries are recorded once. A broken child sitemap is captured as a
+located error with its parent chain instead of aborting the whole crawl; the
+strict `Sitemap#urls` API still raises on the first failure.
 
 Set `CRAWLSCOPE_PROFILE_TOKEN` through the process environment or your secret
 manager when the site protects diagnostic timing with `X-Profile-Token`.
@@ -168,10 +183,38 @@ puts result.issues.to_a.map(&:message)
 - `urls`: sitemap URLs selected for validation
 - `pages`: fetched page snapshots
 - `issues`: structured issues with `code`, `severity`, `category`, `url`, and `message`
+- `sitemap_manifest`: populated `Crawlscope::Sitemap::Manifest` only when `sitemap_manifest_path` is configured; otherwise `nil`
 - `server_timing_summary`: aggregate response timing data when pages publish it
 
 `result.ok?` returns `false` when an error is present. Warnings and notices
 remain available through `result.issues` without making the result fail.
+
+### Sitemap manifest
+
+Build a manifest directly without running page validation:
+
+```ruby
+require "crawlscope"
+
+sitemap = Crawlscope::Sitemap.new(path: "https://example.com/sitemap.xml")
+manifest = sitemap.manifest(base_url: "https://example.com")
+
+manifest.entries.each do |entry|
+  entry.loc               # original <loc> text
+  entry.url               # normalized URL used for validation
+  entry.lastmod           # raw <lastmod> value, or nil
+  entry.alternates        # hreflang relations (hreflang, href, normalized_href)
+  entry.sitemap           # child sitemap that declares the URL
+  entry.parent_sitemaps   # index chain from the root sitemap
+end
+
+manifest.documents        # every visited sitemap with root and parent chain
+manifest.errors           # located child failures that did not stop traversal
+JSON.pretty_generate(manifest.to_h)
+```
+
+`Sitemap#urls` keeps its previous strict behavior and raises
+`Crawlscope::ValidationError` on the first unreadable or invalid sitemap.
 
 ## Rails integration
 

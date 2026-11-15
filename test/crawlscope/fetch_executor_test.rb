@@ -41,4 +41,19 @@ class CrawlscopeFetchExecutorTest < Minitest::Test
     assert_equal %w[A B], results
     assert_equal %w[a b], executor.items
   end
+
+  def test_threaded_executor_reraises_worker_errors_after_scheduling_all_work
+    executor = Crawlscope::FetchExecutor.build(name: :threaded, concurrency: 4)
+    processed = Concurrent::Array.new
+
+    error = assert_raises(RuntimeError) do
+      executor.call([1, 2, 3, 4]) do |item|
+        processed << item
+        raise "boom #{item}" if item == 2
+      end
+    end
+
+    assert_equal "boom 2", error.message
+    assert_equal [1, 2, 3, 4], processed.sort
+  end
 end

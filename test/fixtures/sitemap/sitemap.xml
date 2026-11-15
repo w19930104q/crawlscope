@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <sitemap>
+    <loc>pages.xml</loc>
+    <lastmod>2026-11-10T08:00:00Z</lastmod>
+  </sitemap>
+  <sitemap>
+    <loc>posts.xml.gz</loc>
+    <lastmod>2026-11-09T08:00:00Z</lastmod>
+  </sitemap>
+  <sitemap>
+    <loc>broken.xml</loc>
+    <lastmod>2026-11-08T08:00:00Z</lastmod>
+  </sitemap>
+  <sitemap>
+    <loc>sitemap.xml</loc>
+  </sitemap>
+</sitemapindex>

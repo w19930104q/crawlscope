@@ -3,6 +3,31 @@
 Run `bundle exec rake verify` locally before pushing or preparing a release.
 GitHub Actions runs commitlint and release packaging/publication only.
 
+## Unreleased
+
+### Optional sitemap manifest
+
+The sitemap integration gains an opt-in manifest while keeping every existing
+default. No migration is required unless a host application relies on the
+behaviors below.
+
+- `crawlscope validate --sitemap-manifest PATH` (or `SITEMAP_MANIFEST=PATH`)
+  writes a JSON manifest with the parent sitemap chain, original `loc` and
+  normalized URL, `lastmod`, and `hreflang` alternates for each entry.
+- Without the flag, validation output, `Result#urls` ordering and
+  `Sitemap#urls` are unchanged. `Result` adds a `sitemap_manifest` field that is
+  `nil` unless manifest mode is enabled; keyword constructors remain supported.
+- `Sitemap#manifest` is lenient: unreadable or invalid child sitemaps become
+  entries in `manifest.errors` (with `source`, `message`, and
+  `parent_sitemaps`) and no longer stop the remaining sitemaps from being read.
+  `Sitemap#urls` stays strict and raises `Crawlscope::ValidationError` on the
+  first failure.
+- The threaded fetch executor now re-raises exceptions raised by worker blocks
+  after all scheduled work finishes, instead of returning `nil` for the failed
+  slot. Host code supplying a custom executor is unaffected; code that depended
+  on swallowed thread exceptions must handle them at the call site.
+- Gzip-compressed sitemaps (`.xml.gz`) are now decompressed automatically.
+
 ## 0.9.1
 
 Development and release tooling uses Gemkit 0.3.1. Update the gem and workflow
